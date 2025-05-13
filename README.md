@@ -1,67 +1,83 @@
-## 🧠 Prompt: DynamoDBInsert Lambda from TableExtract Output
+# 🧠 DynamoDBInsert Lambda
 
-Write a **Python program** called `DynamoDBInsert` that will run in **AWS Lambda** and is triggered by an **SQS message**. This Lambda function should load data from S3, process it using an existing component called `TableExtract`, and insert the data into DynamoDB.
+`DynamoDBInsert` is an AWS Lambda function designed for fast, scalable ingestion of structured data into DynamoDB tables. It is particularly suited for use in ETL pipelines where source data is processed and transformed into a tabular format using a shared logic component.
 
-### 📦 Input Format
-- The SQS message contains a **JSON string** with the **S3 bucket and key** of a file.
-- The file is a serialized **Protocol Buffer message** of type `OutputFile`, which is defined in a **Python layer**.
-- The Lambda will:
-  1. Download the S3 file (to memory or temporary disk).
-  2. Parse it using the ProtoBuf class `OutputFile`.
-  3. Pass the parsed object to a function `TableExtract.processOutputData(...)`.
-     - `processOutputData(...)` returns a Python dictionary in the format:
+## 🚀 Purpose
 
-```python
+This Lambda function ingests data files from S3—specifically Protocol Buffer (`protobuf`) serialized files—parses and transforms them into structured rows using an external module called `TableExtract`, and bulk-inserts those rows into DynamoDB tables. Tables are created dynamically if they do not exist, making the process hands-free and highly extensible for new data sources.
+
+This is useful for systems that generate large quantities of structured tabular data but want to dynamically manage persistence in DynamoDB based on the incoming schema.
+
+## 📦 How It Works
+
+1. **Trigger**: The function is triggered by an **SQS message** containing a JSON payload with the `bucket` and `key` of a file in S3.
+2. **File Parsing**:
+   - The S3 file is downloaded and parsed using the `OutputFile` protobuf schema.
+   - The file is then processed using the shared `TableExtract.processOutputData(...)` method.
+3. **Data Ingestion**:
+   - The parsed result is a dictionary of table names to row data.
+   - Each row is inserted into its respective DynamoDB table.
+   - Tables are created if they do not exist, using a simple key strategy.
+4. **Concurrency**: The process is parallelized across tables with limited concurrency for optimal performance and cost control.
+
+## 🛠 Features
+
+- ✅ SQS-triggered, serverless processing
+- ✅ Downloads and deserializes Protocol Buffer files from S3
+- ✅ Uses a pluggable shared table extraction module (`TableExtract`)
+- ✅ Automatically creates DynamoDB tables if they don't exist
+- ✅ Batch writes to DynamoDB using controlled concurrency
+- ✅ Gracefully handles `NaN`, `Inf`, and missing fields
+- ✅ Uses `uuid` or existing `id` field as primary key
+- ✅ Structured logging for observability in CloudWatch or Splunk
+- ✅ Customizable via environment variables
+
+## 📋 Environment Variables
+
+| Variable        | Description                                     | Default     |
+|----------------|-------------------------------------------------|-------------|
+| `SCHEMA_PREFIX`| Prefix used in naming the DynamoDB tables       | `my_schema` |
+| `MAX_WORKERS`  | Maximum number of threads for parallel inserts  | `5`         |
+
+## 📄 Requirements
+
+Add these dependencies to your Lambda layer or deployment package:
+
+```txt
+boto3
+protobuf
+```
+
+Also required:
+- The `TableExtract` module must be accessible in the runtime environment.
+- The `OutputFile` protobuf class must be compiled and available in the Python path.
+
+## 🧪 Example SQS Message
+
+```json
 {
-    "table_name1": [
-        {"field1": "val1", "field2": 123, "field3": 45.6},
-        {"field1": "val2", "field2": 456, "field3": 78.9},
-        ...
-    ],
-    ...
+  "bucket": "my-data-bucket",
+  "key": "exports/datafile.pb"
 }
 ```
 
-Each key is a table name. Each value is a list of row dictionaries, where all rows have the same structure and types (`int`, `float`, `str`), though corner cases like `NaN`, `Inf`, or missing fields may exist.
+## 📊 Logging & Monitoring
+
+The function logs key metrics:
+- Start and end of Lambda execution
+- File download and parsing steps
+- Table creation and insert summaries
+- Warnings for skipped rows or failed inserts
+
+Logs are structured and compatible with systems like CloudWatch or Splunk.
+
+## 🧩 Extensibility
+
+The program is designed to be modular:
+- Swap `TableExtract` with any function returning a dictionary of tables to rows.
+- Use alternative key generation logic if needed.
+- Customize table schema handling via environment or decorator logic.
 
 ---
 
-### 🗃️ DynamoDB Requirements
-- Insert data into **DynamoDB tables**, dynamically creating the tables if they do **not already exist**.
-- Each table name will use a **prefix** such as `{my_schema}_table_name`.
-- Assume a **simple primary key strategy** (e.g., use `"id"` field if it exists, otherwise generate UUID).
-- **Batch write** to DynamoDB with **controlled concurrency** for cost and speed balance.
-- Use **parallelism** for table-level or chunked-row inserts, but keep it manageable for AWS Lambda.
-
----
-
-### ☁️ Logging & Observability
-- Log at INFO level for start/end of:
-  - Lambda execution
-  - File download
-  - Protobuf deserialization
-  - Table creation
-  - Insert summary per table (rows, size, time taken)
-- Use `logging` module with support for structured logs (JSON format preferred for Splunk/CloudWatch).
-- Log warnings for:
-  - Skipped rows (e.g., bad data)
-  - Failures in batch writes
-  - Table creation issues
-
----
-
-### 🛠️ Implementation Notes
-- Use **boto3** for S3 and DynamoDB access.
-- Use **concurrent.futures.ThreadPoolExecutor** or **asyncio** for limited concurrency.
-- Validate or sanitize input data (e.g., replace NaN/Inf with None or strings).
-- Code must be **readable, well-commented, and production-grade**.
-
----
-
-### 🧪 Optional Enhancements
-- Add an environment variable for the schema prefix (e.g., `SCHEMA_PREFIX`).
-- Emit a summary at the end including:
-  - Total tables processed
-  - Total rows inserted
-  - Time taken
-  - Error count (if any)
+© 2025 | Licensed under MIT
